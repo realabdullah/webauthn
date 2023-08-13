@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebAuthn Exp.</title>
+    <link rel="stylesheet" href="./assets/style/main.scss">
+    <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.es5.umd.min.js"></script>
+</head>
+<body>
+    <div class="auth__page">
+        <div class="auth__page-img">
+            <img src="./assets/img/working-with-laptop.png" alt="Authentication">
+        </div>
+
+        <div class="auth__page-form">
+            <div class="auth__page-form-texts">
+                <h2>Welcome wanderer!</h2>
+                <p>Please enter your email address</p>
+            </div>
+
+            <form>
+                <label for="email">
+                    <span class="email">Email</span>
+                    <input type="email" name="email" id="email">
+
+                    <span class="error"></span>
+                </label>
+
+                <button type="submit" class="btn">Login with webAuthn</button>
+            </form>
+
+            <p class="dont">Don't have an account ? <a href="#">Sign up</a></p>
+        </div>
+    </div>
+    
+    <script src="./assets/script/index.js"></script> 
+</body>
+</html>
