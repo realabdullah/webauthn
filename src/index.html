@@ -19,18 +19,35 @@
                 <p>Please enter your email address</p>
             </div>
 
-            <form>
-                <label for="email">
-                    <span class="email">Email</span>
-                    <input type="email" name="email" id="email">
+            <div class="login">
+                <form id="login" onsubmit="stopSubmit(event)">
+                    <label for="email">
+                        <span class="email">Email</span>
+                        <input type="email" name="email" id="email">
+                    </label>
 
                     <span class="error"></span>
-                </label>
 
-                <button type="submit" class="btn">Login with webAuthn</button>
-            </form>
+                    <button type="submit" class="btn">Login with webAuthn</button>
+                </form>
 
-            <p class="dont">Don't have an account ? <a href="#">Sign up</a></p>
+                <p class="dont">Don't have an account ?  <button class="signup-btn" type="button">Sign up</button></p>
+            </div>
+
+            <div class="register">
+                <form id="register" onsubmit="stopSubmit(event)">
+                    <label for="email">
+                        <span class="email">Email</span>
+                        <input type="email" name="email" id="email">
+                    </label>
+
+                    <span class="error"></span>
+
+                    <button type="submit" class="btn">Signup with webAuthn</button>
+                </form>
+
+                <p class="dont">Already have an account ? <button class="login-btn" type="button">Login</button></p>
+            </div>
         </div>
     </div>
     

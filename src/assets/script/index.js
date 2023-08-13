@@ -2,32 +2,29 @@
 if (localStorage.getItem('webauthned'))  window.location.href = 'dashboard.html';
 
 const { browserSupportsWebAuthn, startAuthentication, startRegistration } = SimpleWebAuthnBrowser;
+const loginForm = document.querySelector('#login');
+const registerForm = document.querySelector('#register');
+const loginEmail = document.querySelector('#login #email');
+const loginError = document.querySelector('#login .error');
+const loginSubmit = document.querySelector('#login #submit');
+const registerEmail = document.querySelector('#register #email');
+const registerError = document.querySelector('#register .error');
+const registerSubmit = document.querySelector('#register #submit');
+const loginBtn = document.querySelector('.login-btn');
+const registerBtn = document.querySelector('.signup-btn');
 
-const getAuthOptions = async () => {
-    fetch("/generate-registration-options")
-        .then((response) => response.json())
-        .then((options) => {
-            console.log("Authenticator options", options);
-            startAuthentication(options, true)
-                .then(async (response) => {
-                    console.log("Authenticator response", response);
-                    const verification = await fetch("/verify-registration-response", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify(response),
-                    }).then((response) => response.json());
-                    console.log("Verification", verification);
-                    if (verification.verified) {
-                        console.log("Verification successful")
-                        window.location.href = "dashboard.html";
-                    } else {
-                        alert("Verification failed");
-                    }
-                });
-        });
+const switchForm = (mode) => {
+    if (mode === 'login') {
+        document.querySelector('.login').style.display = 'block';
+        document.querySelector('.register').style.display = 'none';
+    } else {
+        document.querySelector('.login').style.display = 'none';
+        document.querySelector('.register').style.display = 'block';
+    }
 };
+
+loginBtn.addEventListener('click', () => switchForm('login'));
+registerBtn.addEventListener('click', () => switchForm('signup'));
 
 const register = async (email) => {
     const resp = await fetch('/generate-registration-options', {
@@ -43,51 +40,111 @@ const register = async (email) => {
         const options = await resp.json();
         console.log('Authenticator options 2', options);
         attResp = await startRegistration(options);
+        attResp.email = email;
     } catch (error) {
         console.error("Error registering", error);
+        registerError.innerHTML = error.message;
         return;
     }
 
-    const verification = await fetch('/verify-registration-response', {
+    try {
+        const verification = await fetch('/verify-registration-response', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(attResp),
+        }).then((response) => response.json());
+    
+        if (verification.verified) {
+            console.log('Verification successful');
+            registerError.innerHTML = "Verification successful! You can now login";
+            registerError.style.color = 'green';
+        } else {
+            alert('Verification failed');
+        }
+    } catch (error) {
+        console.error("Error verifying registration", error);
+        registerError.innerHTML = error.message;
+    }
+};
+
+const login = async (email) => {
+    const resp = await fetch('/login', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify(attResp),
-    }).then((response) => response.json());
+        body: JSON.stringify({ email }),
+    });
 
-    if (verification.verified) {
-        console.log('Verification successful');
-        window.location.href = 'dashboard.html';
-    } else {
-        alert('Verification failed');
+    let attResp;
+    try {
+        const options = await resp.json();
+        console.log('Authenticator options 3', options);
+        if (options.error) throw new Error(options.error);
+        attResp = await startAuthentication(options);
+        attResp.email = email;
+    } catch (error) {
+        console.error("Error authenticating", error);
+        loginError.innerHTML = error.message;
+        return;
+    }
+
+    try {
+        const verification = await fetch('/verify-login-response', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(attResp),
+        }).then((response) => response.json());
+    
+        if (verification.verified) {
+            console.log('Verification successful');
+            localStorage.setItem('webauthned', true);
+            window.location.href = 'dashboard.html';
+        } else {
+            alert('Verification failed');
+        }
+    } catch (error) {
+        console.error("Error verifying authentication", error);
+        loginError.innerHTML = error.message;
     }
 };
 
 if (!browserSupportsWebAuthn()) {
     alert("WebAuthn is not supported in this browser");
-} else {
-    getAuthOptions();
 }
 
-// const stopeSubmit = (e) => e.preventDefault();
+const stopSubmit = (e) => e.preventDefault();
 
-const form = document.querySelector('form');
-const email = document.querySelector('#email');
-const error = document.querySelector('.error');
-const submit = document.querySelector('#submit');
-
-form.addEventListener('submit', async (e) => {
+registerForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    if (email.value.trim() === '') error.textContent = 'Email is required';
+    if (registerEmail.value.trim() === '') registerError.innerHTML= 'Email is required';
 
-   await register(email.value.trim());
+   await register(registerEmail.value.trim());
 });
 
-email.addEventListener('focus', () => {
-    error.textContent = '';
-    document.querySelector('.email').classList.add('active');
+loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    if (loginEmail.value.trim() === '') loginError.innerHTML= 'Email is required';
+
+    await login(loginEmail.value.trim());
 });
 
-email.addEventListener('blur', () => document.querySelector('.email').classList.remove('active'));
+registerEmail.addEventListener('focus', () => {
+    registerError.innerHTML = '';
+    document.querySelector('#register .email').classList.add('active');
+});
+
+registerEmail.addEventListener('blur', () => document.querySelector('#register .email').classList.remove('active'));
+
+loginEmail.addEventListener('focus', () => {
+    loginError.innerHTML = '';
+    document.querySelector('#login .email').classList.add('active');
+});
+
+loginEmail.addEventListener('blur', () => document.querySelector('#login .email').classList.remove('active'));

@@ -1,32 +1,32 @@
 import express from "express";
 import { exec } from 'child_process';
 import path from 'path';
-import { generateAuthenticationOptions, verifyRegistrationResponse } from '@simplewebauthn/server';
+import { join } from 'node:path';
+import { generateRegistrationOptions, generateAuthenticationOptions, verifyRegistrationResponse } from '@simplewebauthn/server';
 import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers';
+
+import { Low } from 'lowdb'
+import { JSONFile } from 'lowdb/node'
 
 const app = express();
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
+const file = join(__dirname, 'db.json')
 const PORT = 3300;
 
 const rpName = "webauthn-demo";
 const rpId = "localhost";
 const rpOrigin = "http://localhost:3300";
 
-const getUserDetails = (email) => {
-    return {
-        id: email,
-        name: email,
-        displayName: email,
-        savedMethods: [
-            {
-                id: "123",
-                type: "public-key",
-                transports: ["usb"],
-                attachment: "platform",
-            }
-        ],
-    };
-}
+// Configure lowdb to write data to JSON file
+const adapter = new JSONFile(file)
+const defaultData = { users: [] }
+const db = new Low(adapter, defaultData)
+
+// Read data from JSON file, this will set db.data content
+// If JSON file doesn't exist, defaultData is used instead
+await db.read()
+
+const getUserDetails = (email) => db.data.users.find(user => user.email === email) || {};
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
@@ -39,42 +39,49 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "dist/index.html"));
 });
 
-app.post("/generate-registration-options", (req, res) => {
-    console.log("Request", req.body);
+app.post("/generate-registration-options", async (req, res) => {
     const user = getUserDetails(req.body.email);
-    console.log("User", user);
 
-    const options = generateAuthenticationOptions({
+    const options = generateRegistrationOptions({
         rpName,
         rpId,
         rpOrigin,
-        userId: user.id,
-        userName: user.name,
+        userID: req.body.email,
+        userName: req.body.email,
         timeout: 60000,
         attestationType: 'none',
         authenticatorSelection: {
-            residentKey: 'discouraged',
+            userVerification: 'required',
+            residentKey: 'required',
         },
         excludeCredentials: user.savedMethods ? user.savedMethods.map(method => ({
             id: method.id,
             type: method.type,
             transports: method.transports,
         })) : [],
-        authenticatorSelection: {
-            residentKey: 'discouraged',
-        },
         supportedAlgorithmIDs: [-7, -257],
     });
+
+    // save challenge for verification
+    user.challenge = options.challenge;
+
+    // save user
+    if (!db.data.users.find(user => user.email === req.body.email)) {
+        user.email = req.body.email;
+        db.data.users.push(user);
+        await db.write();
+    }
 
     res.send(options);
 });
 
 app.post("/verify-registration-response", async (req, res) => {
+    console.log('Authenticator response', req.body);
     const user = getUserDetails(req.body.email);
 
     const verification = await verifyRegistrationResponse({
         response: req.body,
-        expectedChallenge: req.body.challenge,
+        expectedChallenge: user.challenge,
         expectedOrigin: rpOrigin,
         expectedRPID: rpId,
         requireUserVerification: true,
@@ -85,48 +92,72 @@ app.post("/verify-registration-response", async (req, res) => {
     if (verified && registrationInfo) {
         const { credentialPublicKey, credentialID, counter } = registrationInfo;
 
-        const existingDevice = user.savedMethods.find(device => isoUint8Array.areEqual(device.credentialID, credentialID));
+        const existingDevice = user.savedMethods ? user.savedMethods.find(method => isoUint8Array.areEqual(method.credentialID, credentialID)) : false;
 
-        if (existingDevice) {
-            existingDevice.counter = counter;
-        } else {
-            user.savedMethods.push({
-                credentialID,
+        if (!existingDevice) {
+            const newDevice = {
                 credentialPublicKey,
+                credentialID,
                 counter,
-                transports: req.body.transports,
-            });
+                transports: req.body.response.transports,
+            };
+
+            console.log('newDevice', newDevice);
+
+            if (!user.savedMethods) {
+                user.savedMethods = [];
+            }
+
+            user.savedMethods.push(newDevice);
         }
+
+        await db.write();
     }
 
     res.send(verification);
 });
 
-app.get("/login", (req, res) => {
+app.post("/login", async (req, res) => {
+    console.log('req.body', req.body);
     const user = getUserDetails(req.body.email);
+    console.log('user', user);
 
-    const options = generateAuthenticationOptions({
+    if (!user.email) {
+        return res.send({ error: 'User not found' });
+    }
+
+    const options = {
         timeout: 60000,
         allowCredentials: user.savedMethods.map(method => ({
             id: method.credentialID,
-            type: 'public-key',
+            type: "public-key",
             transports: method.transports,
         })),
         userVerification: 'required',
         rpID: rpId,
-    });
+    };
 
-    res.send(options);
+    console.log('options ooo', options);
+
+    const options2 = generateAuthenticationOptions(options);
+
+    console.log('options2', options2);
+
+    // save challenge for verification
+    user.challenge = options2.challenge;
+
+    res.send(options2);
 });
 
 app.post("/verify-login-response", async (req, res) => {
     const user = getUserDetails(req.body.email);
+    console.log("body ==> ", req.body);
 
-    const bodyCredIDBuffer = isoBase64URL.toBuffer(req.body.id);
+    const bodyCredIDBuffer = isoBase64URL.toBuffer(req.body.rawId);
 
     let authenticator;
     for (const device of user.savedMethods) {
-        if (isoUint8Array.areEqual(device.credentialID, bodyCredIDBuffer)) {
+        if (isoUint8Array.areEqual(device.id, bodyCredIDBuffer)) {
             authenticator = device;
             break;
         }
@@ -140,7 +171,7 @@ app.post("/verify-login-response", async (req, res) => {
     try {
         verification = await verifyAuthenticationResponse({
             response: req.body,
-            expectedChallenge: req.body.challenge,
+            expectedChallenge: user.challenge,
             expectedOrigin: rpOrigin,
             expectedRPID: rpId,
             authenticator,
@@ -155,6 +186,8 @@ app.post("/verify-login-response", async (req, res) => {
     if (verified) {
         authenticator.counter = authenticationInfo.counter;
     }
+
+    await db.write();
 
     res.send(verification);
 });
