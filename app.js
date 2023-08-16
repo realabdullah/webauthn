@@ -2,7 +2,12 @@ import express from "express";
 import { exec } from 'child_process';
 import path from 'path';
 import { join } from 'node:path';
-import { generateRegistrationOptions, generateAuthenticationOptions, verifyRegistrationResponse } from '@simplewebauthn/server';
+import {
+    generateRegistrationOptions,
+    generateAuthenticationOptions,
+    verifyRegistrationResponse,
+    verifyAuthenticationResponse
+} from '@simplewebauthn/server';
 import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers';
 
 import { Low } from 'lowdb'
@@ -76,7 +81,6 @@ app.post("/generate-registration-options", async (req, res) => {
 });
 
 app.post("/verify-registration-response", async (req, res) => {
-    console.log('Authenticator response', req.body);
     const user = getUserDetails(req.body.email);
 
     const verification = await verifyRegistrationResponse({
@@ -102,8 +106,6 @@ app.post("/verify-registration-response", async (req, res) => {
                 transports: req.body.response.transports,
             };
 
-            console.log('newDevice', newDevice);
-
             if (!user.savedMethods) {
                 user.savedMethods = [];
             }
@@ -118,9 +120,7 @@ app.post("/verify-registration-response", async (req, res) => {
 });
 
 app.post("/login", async (req, res) => {
-    console.log('req.body', req.body);
     const user = getUserDetails(req.body.email);
-    console.log('user', user);
 
     if (!user.email) {
         return res.send({ error: 'User not found' });
@@ -137,11 +137,7 @@ app.post("/login", async (req, res) => {
         rpID: rpId,
     };
 
-    console.log('options ooo', options);
-
     const options2 = generateAuthenticationOptions(options);
-
-    console.log('options2', options2);
 
     // save challenge for verification
     user.challenge = options2.challenge;
@@ -151,13 +147,12 @@ app.post("/login", async (req, res) => {
 
 app.post("/verify-login-response", async (req, res) => {
     const user = getUserDetails(req.body.email);
-    console.log("body ==> ", req.body);
 
     const bodyCredIDBuffer = isoBase64URL.toBuffer(req.body.rawId);
 
     let authenticator;
     for (const device of user.savedMethods) {
-        if (isoUint8Array.areEqual(device.id, bodyCredIDBuffer)) {
+        if (isoUint8Array.areEqual(device.credentialID, bodyCredIDBuffer)) {
             authenticator = device;
             break;
         }
@@ -197,18 +192,13 @@ app.get("/dashboard", (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log("Server Listening on PORT:", PORT);
 
     // Run Parcel build and serve
-    // exec based on the environment: development or production
-    console.log('Running Parcel...', process.env.NODE_ENV)
-    const execCommand = process.env.NODE_ENV === 'development' ? 'npx parcel start src/* --out-dir dist --public-url /' : 'npx parcel build src/* --out-dir dist --public-url ./';
-    exec(execCommand, (error, stdout, stderr) => {
-        const mode = process.env.NODE_ENV === 'development' ? 'serve' : 'build';
+    exec("npx parcel build src/* --out-dir dist --public-url ./", (error, stdout, stderr) => {
         if (error) {
-            console.error(`Parcel ${mode} error: ${error}`);
+            console.error("Parcel build error: ", error);
             return;
         }
-        console.log(`Parcel ${mode} stdout: ${stdout}`);
+        console.log("Parcel build success: ", stdout);
     });
 });

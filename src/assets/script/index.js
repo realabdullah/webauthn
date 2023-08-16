@@ -58,7 +58,7 @@ const register = async (email) => {
     
         if (verification.verified) {
             console.log('Verification successful');
-            registerError.innerHTML = "Verification successful! You can now login";
+            registerError.innerHTML = "Registration successful! You can now login";
             registerError.style.color = 'green';
         } else {
             alert('Verification failed');
